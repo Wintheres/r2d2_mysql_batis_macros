@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
-use std::ops::Add;
 use quote::quote;
+use std::ops::Add;
 use syn::{parse_macro_input, DeriveInput, Fields, Type};
 
 #[proc_macro_attribute]
@@ -36,7 +36,7 @@ pub fn entity_option_mapping(attr: TokenStream, input: TokenStream) -> TokenStre
                         primary_key_name = &ident;
                     }
                     type_names.push(field_name.clone());
-                    update_sql.push(quote!{
+                    update_sql.push(quote! {
                         if !self.#ident.eq(&None) {
                             update_sql = update_sql.add(" `");
                             update_sql = update_sql.add(#field_name);
@@ -169,29 +169,24 @@ pub fn entity_option_mapping(attr: TokenStream, input: TokenStream) -> TokenStre
                 }
             }
 
-            let mut insert_sql = String::from("INSERT INTO `");
-            insert_sql = insert_sql.add(table_name);
-            insert_sql = insert_sql.add("` (");
-            for type_name in type_names.clone() {
-                if type_name.eq(primary_key) {
-                    continue;
-                }
-                insert_sql = insert_sql.add("`");
-                insert_sql = insert_sql.add(&*type_name);
-                insert_sql = insert_sql.add("`,");
-            }
-            insert_sql.remove(insert_sql.len() - 1);
-            insert_sql = insert_sql.add(") VALUES (");
-            for type_name in type_names {
-                if type_name.eq(primary_key) {
-                    continue;
-                }
-                insert_sql = insert_sql.add(":");
-                insert_sql = insert_sql.add(&*type_name);
-                insert_sql = insert_sql.add(",");
-            }
-            insert_sql.remove(insert_sql.len() - 1);
-            insert_sql = insert_sql.add(")");
+            let columns: Vec<String> = type_names
+                .iter()
+                .filter(|name| name != &&primary_key.to_string())
+                .map(|name| format!("`{}`", name))
+                .collect();
+
+            let values: Vec<String> = type_names
+                .iter()
+                .filter(|name| name != &&primary_key.to_string())
+                .map(|name| format!(":{}", name))
+                .collect();
+
+            let insert_sql = format!(
+                "INSERT INTO `{}` ({}) VALUES ({})",
+                table_name,
+                columns.join(", "),
+                values.join(", ")
+            );
 
             let impl_fn = quote! {
                 use std::ops::Add;
@@ -215,10 +210,12 @@ pub fn entity_option_mapping(attr: TokenStream, input: TokenStream) -> TokenStre
                         update_sql = update_sql.add(#table_name);
                         update_sql = update_sql.add("` SET");
                         #(#update_sql)*
-                        update_sql.remove(update_sql.len() - 1);
+                        update_sql = update_sql.trim_end_matches(',').to_string();
                         update_sql = update_sql.add(" WHERE `");
                         update_sql = update_sql.add(#primary_key);
-                        update_sql = update_sql.add("` = :user_id LIMIT 1");
+                        update_sql = update_sql.add("` = :");
+                        update_sql = update_sql.add(#primary_key);
+                        update_sql = update_sql.add(" LIMIT 1");
                         update_sql
                     }
 
